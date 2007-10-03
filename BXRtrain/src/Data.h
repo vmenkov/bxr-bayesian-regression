@@ -1,0 +1,1171 @@
+/*
+SL 	change MemRowSetIterator(MemRowSetIterator& rowSet_) to  MemRowSetIterator(const MemRowSetIterator& rowSet_)
+ */
+
+//  v.2.04a     May 30, 05  StandardizedRowSet: check if stddev is zero
+//  v 4.1       Jul 07, add string-int hash map for symbolic feature/class reading;
+
+#ifndef DATA_H
+#define DATA_H
+
+#ifdef _MSC_VER
+  #include <hash_map>
+  #include <hash_set>
+  #include <sys/stat.h>
+  #if _MSC_VER >= 1300
+    using namespace stdext;
+  #endif
+#endif //_MSC_VER
+#ifdef USE_GCC 
+  #include <ext/hash_map>
+  #include <ext/hash_set>
+  using namespace __gnu_cxx;
+#endif
+
+#include <string>
+#include <vector>
+#include <sstream>
+#include <algorithm>
+#include <limits>
+#include <stdexcept>
+#include <map>
+#include <set>
+
+#include "Matrix.h"
+#include "logging.h"
+#include "Compiler.h"
+#include "SparseVector.h"
+
+using namespace std;
+
+struct eqstr
+{
+  bool operator()(const string s1, const string s2) const{
+    return s1==s2;
+  }
+}; 
+
+#ifdef USE_GCC
+namespace __gnu_cxx{
+  // DJB hashing. 
+  // "An algorithm produced by Professor Daniel J. Bernstein and shown first 
+  // to the world on the usenet newsgroup comp.lang.c. It is one of the most 
+  // efficient hash functions ever published."
+  // -- http://www.partow.net/programming/hashfunctions/
+  template<> struct hash<string> {
+    size_t operator()(const std::string& str) const
+    {
+      unsigned int hash = 5381;
+      for(unsigned int i = 0; i < str.length(); i++){
+	hash = ((hash << 5) + hash) + str[i];
+      }
+      return (hash & 0x7FFFFFFF);
+    }  
+  };
+}
+#endif // USE_GCC
+#ifdef _MSC_VER  // visual c++ hash_map has different form
+class stringhasher : public hash_compare <std::string>
+{
+public:
+  size_t operator()(const string& str) const
+  {
+      unsigned int hash = 5381;
+      for(unsigned int i = 0; i < str.length(); i++){
+	hash = ((hash << 5) + hash) + str[i];
+      }
+      return (hash & 0x7FFFFFFF);
+  }  
+
+  bool operator() (const string& s1, const string& s2) const
+  {
+    return s1 < s2;
+  }
+};
+#endif
+
+#ifdef USE_GCC
+typedef hash_map<string, int, hash<string>, eqstr> SIHM;  // SIHM == String Integer Hash Map 
+#endif 
+#ifdef _MSC_VER 
+  #if _MSC_VER >= 1300
+    typedef stdext::hash_map<string, int, stringhasher> SIHM; 
+  #else
+    typedef std::hash_map<string, int, stringhasher> SIHM; 
+  #endif
+#endif 
+
+#ifdef SYMBOLIC
+typedef string MyType;
+typedef vector<string> Vec;
+#else
+typedef int MyType;
+typedef vector<int> Vec;
+#endif 
+
+inline string int2string(int i) {
+    std::ostringstream buf; 
+    buf<<i;
+    return buf.str();
+}
+
+
+//typedef unsigned YType;
+typedef size_t YType;   // ver 3.18
+
+class RowSetMetadata {
+ private:
+    const Vec& m_classes;
+    const Vec& m_features;
+    const Vec& m_addClasses;
+    const Vec& m_addFeats;
+
+    const map<MyType, double>& m_nonactiveFeats;
+    const map<MyType, map<MyType,double> >& m_nonactiveCoeflevelFeats;
+
+    mutable map<MyType,int> m_index;
+
+    #ifdef SYMBOLIC
+    const SIHM& m_featmap;
+    const SIHM& m_clsmap;
+    #endif
+    int m_refclassindex;
+ public:
+
+    #ifdef SYMBOLIC
+    RowSetMetadata(const Vec& classes_, const Vec& features_, 
+		   const Vec& addclasses_, const Vec& addfeats_,
+		   const map<MyType,double>& nafeats_,
+		   const map<MyType, map<MyType,double> >& nacf_,
+		   const SIHM& clshashmap_, const SIHM& feathashmap_, string refclsid) 
+	:
+	m_classes(classes_), m_features(features_), 
+	m_addClasses(addclasses_), m_addFeats(addfeats_),
+	m_nonactiveFeats(nafeats_),
+	m_nonactiveCoeflevelFeats(nacf_),
+	m_clsmap(clshashmap_), m_featmap(feathashmap_)
+	{
+	    _checkrefclass(refclsid);
+	}
+
+    #else
+    RowSetMetadata(const Vec& classes_, const Vec& features_, 
+		   const Vec& addclasses_, const Vec& addfeats_,
+		   const map<MyType,double>& nafeats_,
+		   const map<MyType, map<MyType,double> >& nacf_, string refclsid) 
+	:
+	m_classes(classes_), m_features(features_), 
+	m_addClasses(addclasses_), m_addFeats(addfeats_),
+	m_nonactiveFeats(nafeats_),
+	m_nonactiveCoeflevelFeats(nacf_),
+	{
+	    _checkrefclass(refclsid);
+	}
+    #endif
+
+    const Vec& getClasses() const {
+	return m_classes;
+    }
+    
+    const Vec& getFeatures() const {
+	return m_features;
+    }
+    
+    const Vec& getAddClasses() const {
+	return m_addClasses;
+    }
+    
+    const Vec& getAddFeatures() const {
+	return m_addFeats;
+    }
+
+
+    // index -> original value
+    const MyType getFeatureId(unsigned featureIndex) const {
+	return  m_features.at(featureIndex);
+    }
+    
+    // index -> original value
+    const MyType getClassId(unsigned classIndex) const {
+	return m_classes.at(classIndex);
+    }
+
+    const MyType getAddClassId(unsigned index) const {
+	return m_addClasses.at(index);
+    }
+    
+    unsigned getClassCount() const {
+	return m_classes.size();
+    }
+
+    // original reference class label -> index
+    // note: if not define SYMBOLIC, this is the only original->index exchange.
+    //       in sampling and readmodel, they need the original->index mapping, and it will be 
+    //       generated by themselves. to save time and space in case sampling and readmodel are not used.
+    int getRefClassId() const {
+	return m_refclassindex;
+    }
+
+    #ifdef SYMBOLIC
+    // original value to index
+    int getClassIndex(MyType cls) const {
+	SIHM::const_iterator hmiter = m_clsmap.find(cls);
+	if (hmiter != m_clsmap.end()) 
+	    return hmiter->second;
+	else
+	    return -1;
+    }
+
+    int getFeatIndex(MyType feat) const {
+	SIHM::const_iterator hmiter = m_featmap.find(feat);
+	if(hmiter!=m_featmap.end())
+	    return hmiter->second;
+	else
+	    return -1; 
+    }
+
+    #endif
+
+    const map<MyType, double>& getNonActiveFeats() const { 
+	return m_nonactiveFeats; 
+    }
+
+    const map<MyType, map<MyType,double> >& getNonactiveCoeflevelFeats() const { 
+	return m_nonactiveCoeflevelFeats;
+    }
+
+    // get the nonactive topicfeats for bmr
+    string getNonactiveFeatsStr() const {
+	string str = " ";
+	set<MyType> temp;
+
+	map<MyType,map<MyType,double> >::const_iterator iter1;
+	map<MyType,double>::const_iterator iter2;
+
+	for(iter2=m_nonactiveFeats.begin();iter2!=m_nonactiveFeats.end();iter2++)
+	    temp.insert(iter2->first);
+
+	for(iter1=m_nonactiveCoeflevelFeats.begin();iter1!=m_nonactiveCoeflevelFeats.end();iter1++) 
+	    for(iter2=iter1->second.begin();iter2!=iter1->second.end();iter2++)
+		temp.insert(iter2->first);
+
+	for(set<MyType>::iterator siter = temp.begin(); siter!=temp.end(); siter++) {
+	    #ifdef SYMBOLIC
+	    str = str + *siter + " ";
+	    #else
+	    char buf[250];
+	    sprintf(buf,"%d ", *siter);
+	    str = str + string(buf);
+	    #endif
+	}
+
+	return str;
+    }
+
+    // get the values of the nonactive feat:val pairs for bmr 
+    ostringstream& getNonactiveFeatsVarStr4bmr(MyType cls) const {
+	ostringstream* str = new ostringstream();
+
+	map<MyType,double> temp(m_nonactiveFeats);
+
+	map<MyType,map<MyType,double> >::const_iterator iter1;
+	map<MyType,double>::const_iterator iter2;
+
+	for(iter1=m_nonactiveCoeflevelFeats.begin();iter1!=m_nonactiveCoeflevelFeats.end();iter1++) 
+	    if(iter1->first == cls)
+		for(iter2=iter1->second.begin();iter2!=iter1->second.end();iter2++)
+		    temp[iter2->first] = iter2->second;
+
+	for(iter2 = temp.begin(); iter2!=temp.end(); iter2++) {
+	    *str<<iter2->first<<":"<<iter2->second<<" ";
+	}
+
+	return *str;
+    }
+
+    // get the topicfeats and values for bbr
+    void getNonactiveFeatsVarStr4bbr(ostringstream& feats, ostringstream& vars) const {
+
+	map<MyType,double> temp(m_nonactiveFeats);
+
+	map<MyType,map<MyType,double> >::const_iterator iter1;
+	map<MyType,double>::const_iterator iter2;
+
+	MyType cls;
+	#ifdef SYMBOLIC
+	cls = "-1";
+	#else
+	cls = -1;
+	#endif
+
+	for(iter1=m_nonactiveCoeflevelFeats.begin();iter1!=m_nonactiveCoeflevelFeats.end();iter1++) 
+	    if(iter1->first == cls)
+		for(iter2=iter1->second.begin();iter2!=iter1->second.end();iter2++)
+		    temp[iter2->first] = iter2->second;
+
+	for(iter2 = temp.begin(); iter2!=temp.end(); iter2++) {
+	    feats<<iter2->first<<" ";
+	    vars<<iter2->second<<" "; 
+	}
+    }
+
+ private:
+    void _checkrefclass(string refclsid) {
+	#ifdef SYMBOLIC
+	MyType cls = refclsid;
+	#else
+	MyType cls = atoi(refclsid.c_str());
+	#endif
+	Vec::const_iterator viter = find(m_classes.begin(),m_classes.end(),cls);
+	if(viter!=m_classes.end())
+	    m_refclassindex = viter-m_classes.begin();
+	else
+	    m_refclassindex = -1;
+    }
+};
+
+class RowSetIterator {
+public:
+    virtual bool next() = 0;
+    virtual YType y() const = 0;
+    virtual bool ygood() const = 0;
+    virtual void rewind() = 0;
+    virtual const SparseVector& xsparse() const = 0;
+};
+
+class IRowSet {
+public:
+
+    virtual YType getY(int row) const = 0;
+    
+    virtual unsigned n() const { throw logic_error("Unsupported feature: Size of rowset"); return unsigned(-1); }
+    
+    virtual const RowSetMetadata& getRowSetMetadata() const = 0;
+    
+    // Returns the dimension of the record set.
+    virtual unsigned dim() const = 0;
+    
+    // TODO: Rename "classCount" or something like it.
+    virtual unsigned c() const = 0;
+    
+    // generally must statically cast to use it
+    virtual RowSetIterator* iterator() = 0;
+    
+    virtual ~IRowSet() {};
+
+};
+
+
+// This is a lazy row set used for testing, not training. 
+class PlainYRowSet : public IRowSet {
+    friend class PlainYRowSetIterator;
+
+    RowSetMetadata m_metadata;
+
+    //to generate data
+    bool m_readFromStdin;
+
+    const Vec& m_classes;
+    const Vec& m_featSelect;
+
+    mutable map<MyType, unsigned> m_featSelectInverse;
+
+    string m_dataFileName;
+
+public:
+    ~PlainYRowSet() { 
+    }
+
+    PlainYRowSet( const char* dataFName,
+		  const Vec& wordRestrict_, 
+		  const RowSetMetadata& metadata_)
+	:
+	m_classes(metadata_.getClasses()),
+	m_featSelect(metadata_.getFeatures()),
+	m_featSelectInverse(map<MyType, unsigned>()),
+	m_metadata(metadata_),
+	m_dataFileName(dataFName)
+
+    {
+	unsigned index = 0;
+	for (Vec::const_iterator i = m_featSelect.begin(); i < m_featSelect.end(); i++) {
+	    m_featSelectInverse[*i] = index++;
+	}
+    }
+
+    YType getY(int row) const {
+	throw(logic_error("random access Y not supported for PlainYData"));
+    }
+    
+    unsigned classNumById( MyType id ) const {
+        Vec::const_iterator itc=lower_bound( m_classes.begin(), m_classes.end(), id );
+        if( itc==m_classes.end() || *itc!=id ) {
+	    #ifdef SYMBOLIC
+	    throw logic_error(string("Unknown class id: ")+id);
+	    #else
+            throw logic_error(string("Unknown class id: ")+int2string(id));
+	    #endif
+	}
+        return itc - m_classes.begin();
+    }
+    
+    const RowSetMetadata& getRowSetMetadata() const {
+	return m_metadata;
+    }
+    
+    unsigned dim() const { 
+        return m_featSelect.size(); //1 + m_featSelect.size(); 
+    }
+    
+    virtual string rowName( unsigned r ) const { 
+        return int2string(r);
+    }
+
+    string colName( unsigned c ) const { 
+	#ifdef SYMBOLIC
+	return m_featSelect.at(c);
+	#else
+	return int2string(m_featSelect.at(c)); 
+	#endif
+    }
+
+    MyType colId( unsigned c ) const { 
+	return m_featSelect.at(c); 
+    }
+
+    unsigned colNumById( MyType id ) const {
+	unsigned index = m_featSelectInverse.operator[](id);
+	return index;
+    }
+
+    unsigned c() const { 
+	return m_classes.size(); 
+    }
+
+    RowSetIterator* iterator();
+    PlainYRowSetIterator* plainYiterator();
+    
+};
+
+class PlainYRowSetIterator : public RowSetIterator {
+    PlainYRowSet& m_set;
+
+    SparseVector m_sparse;
+    YType m_y;
+    MyType m_yid;
+
+    bool valid;
+    unsigned currRow1;
+    
+    istream *p_ifs;
+    
+    bool m_readFromStdin;
+	
+    // new class labels
+    Vec oddclasses;
+    unsigned oddrows;
+    
+ public:
+    PlainYRowSetIterator(PlainYRowSet& set_) : m_set(set_), oddrows(0) {
+        currRow1 = 0;
+        valid = true;
+	
+	if( readFromStdin(m_set.m_dataFileName.c_str()) ) {
+            p_ifs = &cin;
+            m_readFromStdin = true;
+        }else{
+            p_ifs = new ifstream(m_set.m_dataFileName.c_str());
+            m_readFromStdin = false;
+        }
+	
+    }
+    
+    ~PlainYRowSetIterator() {
+	if(!m_set.m_readFromStdin) delete p_ifs;
+    }
+    
+    bool next() {
+        vector<pair<MyType,double> > tf;
+        valid = ReadRowY( tf ); //sets m_y
+        if( valid ) {
+            // reduce to selected 'terms' and multiply by idf; compute norm;
+            RestrictRecode( tf );
+        }
+        return valid;
+    }
+
+    const SparseVector& xsparse() const { 
+	return m_sparse; 
+    }
+
+    YType y() const { 
+	return m_y; 
+    }
+    
+    MyType yid() const {
+	return m_yid;
+    }
+
+    bool ygood() const  { 
+	return 0<=m_y && m_y<m_set.m_classes.size(); 
+    }
+    
+    void rewind() { //  throw logic_error("Rewind capability not supported for PlainYRowSet"); }
+	p_ifs->clear();
+        p_ifs->seekg(0, ios::beg); //rewind
+	p_ifs->clear();
+        currRow1 = 0;
+        valid = true; 
+    }
+    
+private:
+    bool ReadRowY( vector<pair<MyType,double> >& tf ) {
+        string buf;
+        while(1) {//look for not-a-comment line
+            getline( *p_ifs, buf );
+            if( p_ifs->fail() )
+                return false;
+            else
+                if( buf[0]=='#' )
+                    continue; //look for not-a-comment line
+		else {
+		    istringstream rowbuf( buf );
+		    MyType feat; double d;
+		    rowbuf>>m_yid;
+		    if( rowbuf.fail() )  
+			return ReadRowY( tf ); //empty line - recurse to read the next one
+		    
+		    Vec::const_iterator itc=lower_bound( m_set.m_classes.begin(), m_set.m_classes.end(), m_yid );
+		    if( itc!=m_set.m_classes.end() && *itc==m_yid )
+			m_y = itc - m_set.m_classes.begin();
+		    else{ 
+                        // if class not in training data, keep the class label "y" in oddclasses vector
+			// the index = size of m_classes + index in oddclasses
+			oddrows++;
+			Vec::const_iterator itrodd=locate_in_odd( m_yid );
+			if( itrodd==oddclasses.end() ) { //first time met
+			    oddclasses.push_back( m_yid );
+			    m_y = m_set.m_classes.size() + oddclasses.size()-1;
+			}
+			else
+			    m_y = m_set.m_classes.size() +( itrodd - oddclasses.begin() );
+		    }
+		    string featurepair;
+		    while( rowbuf>>featurepair) { //rowbuf.good()
+
+			// find the location of the separator
+			size_t pcol = featurepair.find_first_of(":");
+			// get the featureID:weight pair
+			if(pcol==string::npos) {	
+			    string emsg = "Wrong data format: Missing colon";
+			    throw logic_error(emsg);
+			}
+		
+			#ifdef SYMBOLIC
+			feat = featurepair.substr(0,pcol);
+			#else
+			feat = atoi(featurepair.substr(0,pcol).c_str());
+			#endif
+
+			d = atof(featurepair.substr(pcol+1).c_str());
+
+			if( !rowbuf.fail() )
+			    tf.push_back(pair<MyType,double>( feat, d));
+		    }
+
+		    if( rowbuf.eof() ) { //the only legal reason to end the loop
+			currRow1 ++;
+			return true;
+		    }
+		    else
+			throw runtime_error(string("Corrupt test file line: ") + buf);
+		}
+        } //look for not-a-comment line
+    }
+    
+    void RestrictRecode( const vector<pair<MyType,double> >& tf ) //converts to m_sparse
+    {
+        m_sparse.clear();
+        double norm = 0.0;
+
+        //intersection of sparse vector and terms
+        //TODO: go through WordRestrict only when cosNorm; consider case when wordRestrict is all
+        for( vector<pair<MyType,double> >::const_iterator ix = tf.begin(); ix!=tf.end(); ix++ )
+        {
+            //find in WordRestrict first
+            Vec::const_iterator iWR = lower_bound(m_set.m_featSelect.begin(), 
+						  m_set.m_featSelect.end(), 
+						  ix->first );
+            if( iWR!=m_set.m_featSelect.end() && *iWR==ix->first )
+            {
+                unsigned iTermWR = iWR - m_set.m_featSelect.begin();
+                norm += ix->second * ix->second;
+
+		unsigned iTermFS = iWR - m_set.m_featSelect.begin();
+		m_sparse.push_back(SparseItem(iTermFS, ix->second )); 
+                
+            }
+        }
+
+    	// add intercept
+	m_sparse.push_back(SparseItem(0, 1.0));
+
+    }
+
+    Vec::const_iterator locate_in_odd(MyType y ) const {
+        Vec::const_iterator itrodd;
+        for( itrodd=oddclasses.begin(); itrodd!=oddclasses.end(); itrodd++ )
+            if( *itrodd==y )
+                break;
+        return itrodd;
+    }
+
+
+};
+
+
+struct Item {
+	size_t m_row;
+	YType m_feature;
+	double m_value;
+
+public:
+	Item(size_t row_, YType feature_, double value_) : m_row(row_), m_feature(feature_), m_value(value_) {}
+};
+
+class ItemSortByFeaturePredicate : public binary_function<Item, Item, bool> {
+public:
+	bool operator()(const Item& _Left, const Item& _Right) const {
+		return (_Left.m_feature < _Right.m_feature);
+		}
+};
+
+class ItemSortByRowPredicate : public binary_function<Item, Item, bool> {
+public:
+	bool operator()(const Item& _Left, const Item& _Right) const {
+		return (_Left.m_row < _Right.m_row);
+		}
+};
+
+
+
+/* Row set explicit in memory */
+
+class MemRowSet : public IRowSet {
+    
+    const RowSetMetadata m_metadata;
+
+    // store the training examples; the feature values are mapped ids
+    const vector<SparseVector>& m_x;
+    // store the class labels for each training examples; the class ids are already mapped
+    const vector<YType>& m_y;
+    // store the index tables for the features
+    const vector<int>& m_wordIndex;
+    // store all unique original feature values (active in training examples only); sorted
+    const Vec& m_featureIndexToId;
+    // store all possible unique class labels; sorted
+    const Vec& m_classIndexToId;
+    // the total number of all non-zero feature appearances
+    size_t m_nfeatures; //SL
+    #ifdef SYMBOLIC
+    // string-int hash map for feature and class
+    const SIHM& m_featmap;
+    const SIHM& m_clsmap;
+    #endif
+
+public:
+
+    size_t getNFeatures() {return m_nfeatures;}  //SL
+
+    const vector<YType>& Y() const { return m_y; } //not to override
+
+    #ifdef SYMBOLIC
+    MemRowSet(  const vector<SparseVector>& x_, 
+		const vector<YType>& y_,
+		const SIHM& featmap_,
+		const Vec& featureIndexToId_, 
+		const SIHM& clsmap_,
+		const Vec& classIndexToId_,
+		const vector<int>& wordIndex_,
+		const RowSetMetadata& metadata_)
+        : m_x(x_), m_y(y_), m_featmap(featmap_), m_clsmap(clsmap_),
+	m_featureIndexToId(featureIndexToId_), m_classIndexToId(classIndexToId_),
+        m_metadata(metadata_), m_wordIndex(wordIndex_) 
+	{
+	}
+    #else
+    MemRowSet(  const vector<SparseVector>& x_, 
+		const vector<YType>& y_,
+		const Vec& featureIndexToId_, 
+		const Vec& classIndexToId_,
+		const vector<int>& wordIndex_,
+		const RowSetMetadata& metadata_)
+        : m_x(x_), m_y(y_), m_featureIndexToId(featureIndexToId_), m_classIndexToId(classIndexToId_),
+        m_metadata(metadata_), m_wordIndex(wordIndex_) 
+	{
+	}
+    #endif
+    
+    ~MemRowSet() { 
+    }
+    
+    // return number of training examples (not empty ones); 
+    unsigned n() const { 
+	return m_x.size(); 
+    }
+
+    const RowSetMetadata& getRowSetMetadata() const {
+	return m_metadata;
+    }
+    
+    // get the mapped class id for training example "row"
+    YType getY(int row) const {
+	return m_y.at(row);
+    }
+    
+    // get the training example at "row"
+    const SparseVector& getX(int row) const {
+	return m_x.at(row);
+    }
+    
+    // ?
+    bool ygood() const { 
+	return true; 
+    }
+    
+    // return the number of features+1 == the number of features plus intercept
+    unsigned dim() const { 
+	return /*1+*/featureCount(); 	
+    }
+    
+    // return number of unique active features in training examples
+    int featureCount() const {
+	return m_featureIndexToId.size();
+    }
+
+    // number of unique classes 
+    unsigned c() const { 
+	return m_classIndexToId.size();
+    }
+
+    // mapped feature id -> original feature value
+    MyType colId( unsigned c ) const { 
+	if(c>=m_featureIndexToId.size())
+	    throw logic_error("unable to find the feature information\n");
+	return m_featureIndexToId.at(c);
+    }
+    
+    // mapped class id -> original class label
+    MyType classId( unsigned c ) const { 
+	if(c>=m_classIndexToId.size())
+	    throw logic_error("unable to find the class information\n");
+	return m_classIndexToId.at(c);
+    }
+
+    // original class label ->  mapped class id
+    int classIndexById(MyType c) {  // ver 4.0; change the return value from unsigned to int
+	Vec::const_iterator viter = find(m_classIndexToId.begin(), m_classIndexToId.end(), c);
+	return viter==m_classIndexToId.end() ? -1 :  viter-m_classIndexToId.begin();
+    }
+    
+    // original feature value ->  mapped feature id
+    int featureIndexById(MyType f)  {  // ver 4.0; change the return value from unsigned to int
+	Vec::const_iterator viter = find(m_featureIndexToId.begin(), m_featureIndexToId.end(), f);
+	return viter==m_featureIndexToId.end() ? -1 : viter-m_featureIndexToId.begin();	
+    }
+    
+    class RowSetIterator* iterator();
+    
+    const vector<int> getWordIndex() const {return m_wordIndex; }
+
+    vector< vector<bool> > allzeroes() const //{ return  m_allzeroes; }
+	{
+	    
+	    std::cout << "Counting zeroes " << Log.time();
+	    unsigned d = featureCount();
+	    vector< vector<bool> >  zeroes( d, vector<bool>( c(), true ) );
+
+	    vector<bool> nonneg( d, true );
+	    for( unsigned i=0; i<m_x.size(); i++ )
+		for( SparseVector::const_iterator iTF=m_x.at(i).begin(); iTF!=m_x.at(i).end(); iTF++ ) 
+		    if( iTF->second!=0 )
+		    {
+			// (Hack: this handles intercept)
+			// if (iTF->first != 0) {
+			if(iTF->first!=0) {
+				zeroes.at( iTF->first ).at( m_y.at(i) ) = false;
+				if( 0.0 > iTF->second )
+				    nonneg [iTF->first] = false;
+			}
+		    }
+	    
+	    // remove those which can be negative
+	    for( unsigned j=0; j<d; j++ )
+		if( !nonneg[j] )
+		    zeroes.at(j) = vector<bool>( c(), false );
+
+	    // for intercept, set to false
+	    zeroes.at(0) = vector<bool>( c(), false);
+
+	    // report
+	    for( unsigned k=0; k<c(); k++ ) {
+		Log(3)<<"\nZero vars for class "<<k<<":";
+		unsigned nzeroes=0;
+		for( unsigned j=0; j<d; j++ )
+		    if( zeroes.at(j).at(k) ) {
+			nzeroes++; 
+		    }
+		Log(3)<<" total "<<nzeroes;
+	    }
+	    std::cout << "Counted zeroes " << Log.time();
+	    return zeroes;
+	}
+
+    void print() {
+	// print out the m_featselect
+	cout<<"Features: ";
+	for(Vec::const_iterator viter = m_featureIndexToId.begin();viter!=m_featureIndexToId.end();viter++)
+	    cout<<*viter<<" ";
+	cout<<endl;
+
+	// print out the m_class
+	cout<<"Classes: ";
+	for(Vec::const_iterator viter = m_classIndexToId.begin();viter!=m_classIndexToId.end();viter++)
+	    cout<<*viter<<" ";
+	cout<<endl;
+
+	// print out m_x
+	cout<<"training examples: "<<endl;
+	for(unsigned i=0; i<m_x.size();i++) {
+	    for(SparseVector::const_iterator siter=m_x.at(i).begin();siter!=m_x.at(i).end();siter++)
+		cout<<siter->first<<":"<<siter->second<<" ";
+	    cout<<endl;
+	}
+	
+    }
+
+ 
+};
+
+class MemRowSetIterator : public RowSetIterator {
+private:
+    MemRowSet& m_rowSet;
+
+    bool m_valid;
+    SparseVector m_currx;
+
+protected:
+    unsigned m_currow;
+
+public:
+	MemRowSetIterator(MemRowSet& rowSet_) : m_rowSet(rowSet_), m_valid(false), m_currow(0) {
+	}
+
+//	MemRowSetIterator(MemRowSetIterator& rowSet_) : m_rowSet(rowSet_.m_rowSet), m_valid(false), m_currow(0) {
+//	}
+
+	MemRowSetIterator(const MemRowSetIterator& rowSet_) : m_rowSet(rowSet_.m_rowSet), m_valid(false), m_currow(0) {
+	}
+
+	bool next() {
+        
+		if (m_valid) m_currow++;
+        else m_currow = 0;
+
+        m_valid = (m_currow < m_rowSet.n());
+        if (!m_valid)  
+			return false;
+
+		m_currx = m_rowSet.getX(m_currow);
+		return true;
+    }
+
+    YType y() const { 
+		return m_rowSet.getY(m_currow);
+	}
+
+	YType getY(unsigned row) {
+		return m_rowSet.getY(row);
+	}
+
+	bool ygood() const {
+		return true;
+	}
+
+    void rewind() { 
+        m_valid = false;
+    }
+
+    const SparseVector& xsparse() const { 
+		return m_currx; 
+	}
+
+	unsigned dim() const {
+		return m_rowSet.dim();
+	}
+
+	unsigned c() const {
+		return m_rowSet.c();
+	}
+
+	unsigned n() const {
+		return m_rowSet.n();
+	}
+
+};
+
+class SampledRowSetIterator : public MemRowSetIterator {
+	vector<int> m_rndind;
+	int m_sample;
+	bool m_in;
+
+	vector<int> m_rowIndex;
+
+public:
+	SampledRowSetIterator(MemRowSetIterator& motherset_, vector<int> rndind_, int sample_, bool in_) : MemRowSetIterator(motherset_), m_rndind(rndind_),
+		m_sample(sample_), m_in(in_) {
+	}
+
+	bool next() {
+		bool ret;
+
+		while (true) {
+			ret = MemRowSetIterator::next();
+			if (!ret) {
+				break;
+			}
+
+			bool condition = (m_sample == m_rndind[m_currow]);
+			if (condition == m_in) {
+				ret = true;
+				break;
+			}
+		}
+
+		return ret;
+    }
+
+
+
+};
+
+
+class RowSetSampler {
+private:
+	MemRowSetIterator& m_motherset;
+	vector<int> m_rndind;
+
+public:
+
+	RowSetSampler(MemRowSetIterator& motherset_, int nfolds_) : m_motherset(motherset_) {
+        m_rndind = PlanStratifiedSplit( m_motherset, nfolds_ );
+	}
+
+	SampledRowSetIterator* getSample(int n, bool in) {
+		return new SampledRowSetIterator(m_motherset, m_rndind, n, in);
+	}
+
+private:
+	vector<int> PlanStratifiedSplit( MemRowSetIterator& drs, unsigned nfolds ) {
+
+		vector<int> splitindices;
+
+		//collect class totals
+		vector<unsigned> classtotals( drs.c(), 0 );
+
+		MemRowSetIterator& i = drs;
+		while( i.next() )
+			classtotals.at( i.y() ) ++;
+
+		//plan the split
+		unsigned nstr = classtotals.size();
+		vector< vector<unsigned> > split( nstr );
+		for( unsigned istr=0; istr<nstr; istr++ ) {
+			split.at(istr).resize( classtotals.at(istr) ); //grow each to proper size
+		}
+		StrataSplit( classtotals, nfolds, split );
+		ReportSplit( nfolds, split, Log(6) );
+
+		vector<unsigned> classindices( drs.c(), 0 ); //cases already met per class
+		i.rewind();
+		while( i.next() ) {
+			splitindices.push_back( split .at(i.y()) .at(classindices.at(i.y())) );
+			classindices.at(i.y()) ++;
+		}
+
+		return splitindices;
+	}
+
+	void rndperm( vector<unsigned>& a ) {
+	    const double randmax = RAND_MAX;
+		unsigned n = a.size();
+		if(0==n) return;
+		unsigned swap;
+		for( unsigned i=0; i<n; i++ )   a.at(i) = i;
+		for( unsigned i=0; i+1<n; i++ ) {  
+			unsigned r = rand();
+			unsigned j = unsigned( i + (r/(randmax+1))*(n-i) );
+			swap = a.at(i); a.at(i)=a.at(j); a.at(j)=swap;
+		}
+	}
+
+	vector<unsigned> rndperm( unsigned n ) {
+		vector<unsigned> a( n );
+		rndperm( a );
+		return a;
+	}
+
+	vector< vector<unsigned> >  //returns arrays of fold ids, one array per stratum
+	StrataSplit(
+				 const vector<unsigned>& strataSizes, //sizes per strata; length defines #strata
+				 unsigned nfolds )
+	{
+		unsigned nstr = strataSizes.size();
+		vector< vector<unsigned> > splits( nstr );
+
+		//permutations for each stratum
+		for( unsigned istr=0; istr<nstr; istr++ ) {
+			splits.at(istr).resize( strataSizes.at(istr) ); //grow each to proper size
+			rndperm( splits.at(istr) ); //and create a permutation in place
+		}
+
+	   //reorder strata themselves, compute shifts for reel-in
+		vector<unsigned> strOrder = rndperm( nstr );
+		vector<unsigned> strShifts( nstr );
+		unsigned cumul = 0;
+		for( unsigned i=0; i<nstr; i++ ) {
+			unsigned inext = find(strOrder.begin(),strOrder.end(),i) - strOrder.begin();
+			strShifts.at(inext) = cumul % nfolds;
+			cumul += strataSizes.at(inext);
+		}
+
+		//do the split - emulate reel-in
+		for( unsigned istr=0; istr<nstr; istr++ )
+			for( unsigned j=0; j<strataSizes.at(istr); j++ ) {
+			   splits.at(istr).at(j) = (splits.at(istr).at(j) + strShifts.at(istr)) % nfolds;
+			}
+
+		return splits;
+	}
+	void
+	StrataSplit(
+				 const vector<unsigned>& strataSizes, //sizes per strata; length defines #strata
+				 unsigned nfolds,
+				 vector< vector<unsigned> > & splits )
+	{
+		unsigned nstr = strataSizes.size();
+
+		//permutations for each stratum
+		for( unsigned istr=0; istr<nstr; istr++ ) {
+			rndperm( splits.at(istr) );
+		}
+
+		//reorder strata themselves, compute shifts for reel-in
+		vector<unsigned> strOrder = rndperm( nstr );
+		vector<unsigned> strShifts( nstr );
+		unsigned cumul = 0;
+		for( unsigned i=0; i<nstr; i++ ) {
+			unsigned inext = find(strOrder.begin(),strOrder.end(),i) - strOrder.begin();
+			strShifts.at(inext) = cumul % nfolds;
+			cumul += strataSizes.at(inext);
+		}
+
+		//do the split - emulate reel-in
+		for( unsigned istr=0; istr<nstr; istr++ )
+			for( unsigned j=0; j<strataSizes.at(istr); j++ ) {
+			   splits.at(istr).at(j) = (splits.at(istr).at(j) + strShifts.at(istr)) % nfolds;
+			}
+	}
+	void ReportSplit( unsigned nfolds, const vector< vector<unsigned> >& split, ostream& o ) {
+		unsigned nstrata = split.size();
+		vector<unsigned> totals( nfolds, 0 );
+		for( unsigned istr=0; istr<nstrata; istr++ ) {
+			vector<unsigned> perfold( nfolds, 0 );
+			for( unsigned j=0; j<split.at(istr).size(); j++ )
+				perfold.at( split.at(istr).at(j) ) ++;
+			o<<"\nStrata "<<istr<<" Folds:";
+			for( unsigned f=0; f<nfolds; f++ ) {
+				o<<" "<<perfold.at(f);
+				totals.at(f) += perfold.at(f);
+			}
+		}
+		o<<"\n   Fold totals:";
+		for( unsigned f=0; f<nfolds; f++ )
+			o<<" "<<totals.at(f);
+	}
+
+
+
+};
+
+
+class StandardizedRowSetIterator : public MemRowSetIterator {
+    Vector means;
+    Vector stddevs;
+
+	vector<int> m_rowIndex;
+    SparseVector m_x;
+
+public:
+	StandardizedRowSetIterator(MemRowSetIterator& motherset_, Vector means_, Vector stddevs_) : MemRowSetIterator(motherset_), means(means_), stddevs(stddevs_) {
+	}
+
+	bool next() {
+		bool ret;
+
+		while (true) {
+			ret = MemRowSetIterator::next();
+			if (!ret) {
+				break;
+			}
+
+			const SparseVector& v = MemRowSetIterator::xsparse();
+			for( unsigned i=0; i<dim(); i++ ) 
+            {
+                double val, newval;
+                //?? that does not work for some reason... int colid = source.colId( i );
+                SparseVector::const_iterator xitr=v.find( i ); //?colid
+				if( xitr==v.end() ) {
+                    val = 0;
+				}
+				else {
+                    val = xitr->second;
+				}
+
+                newval = val - means[i];
+                if( stddevs[i] > 0 ) newval /= stddevs[i];
+                m_x.insert( i, newval );
+            }
+
+
+		}
+
+		return ret;
+    }
+
+
+
+};
+#endif //DATA_H
+
+/*
+    Copyright 2005, Rutgers University, New Brunswick, NJ.
+
+    All Rights Reserved
+
+    Permission to use, copy, and modify this software and its documentation for any purpose 
+    other than its incorporation into a commercial product is hereby granted without fee, 
+    provided that the above copyright notice appears in all copies and that both that 
+    copyright notice and this permission notice appear in supporting documentation, and that 
+    the names of Rutgers University, DIMACS, and the authors not be used in advertising or 
+    publicity pertaining to distribution of the software without specific, written prior 
+    permission.
+
+    RUTGERS UNIVERSITY, DIMACS, AND THE AUTHORS DISCLAIM ALL WARRANTIES WITH REGARD TO 
+    THIS SOFTWARE, INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR 
+    ANY PARTICULAR PURPOSE. IN NO EVENT SHALL RUTGERS UNIVERSITY, DIMACS, OR THE AUTHORS 
+    BE LIABLE FOR ANY SPECIAL, INDIRECT OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER 
+    RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, 
+    NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR 
+    PERFORMANCE OF THIS SOFTWARE.
+*/

@@ -1,0 +1,7 @@
+/O2 /Ob1 /Oy /I ".." /I "C:\Documents and Settings\CSEgrad.JOHNNY5-PKD117\Desktop\BXR\tclap-1.0.5\include" /D "GROUPS" /D "TEST_ONLY" /D "WIN32" /D "NDEBUG" /D "_CONSOLE" /D "_MBCS" /GF /FD /EHsc /ML /GS /Gy /Zc:forScope /Fo"./" /Fd"./vc70.pdb" /W3 /c /Zi /TP
+..\src\MultiModel.cpp
+..\src\BMRclassify.cpp
+..\src\readTestVectorFile.cpp
+..\src\parseModelFiles.cpp
+..\src\readLabelFile.cpp
+..\src\genResultFile.cpp

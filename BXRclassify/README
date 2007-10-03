@@ -1,0 +1,112 @@
+#############################################################################
+BXRclassify: classification for Bayesian Polytomous Resgression model. 
+             Can take multiple models at the same time, classify a vector
+	     for all the models. 
+
+28Feb07. Bing Bai, Shenzhi Li.
+#############################################################################             
+
+The directory contains:
+
+1. ./src contains the source codes
+
+2. ./gcc directory
+   contains "Makefile" for Linux 
+
+3. ./msvc directory, which includes
+   rebuilt.bat, BXRclassify.compile.rsp, BXRclassify.link.rsp  for Windows
+
+4. ./doc
+      
+5. ./examples
+ 
+###############################################################################
+##########     To Compile  ###############################################
+###############################################################################
+
+To compile on linux, 
+   go to ./gcc
+   modify the path for tclap in Makefile
+   then type make.
+
+To compile on Windows,
+   go to ./msvc dir,
+   fix the path for tclap in bxrclassify.compile.rsp;
+   then type "rebuilt.dat"
+   
+
+##############################################################################
+#######      Usage ######################################
+##############################################################################
+
+
+   ./BXRclassify  [--trace <trace file>] [-r <results file>] [-I] [-p] [-j]
+                  [-s <result file format>] [-o <class label>] [-L <label
+                  file>] [-t <threshold value (only valid with '-c')>] [-c
+                  <output criterion>] [-k] [--] [-v] [-h] <datafile>
+                  <modelfile>
+
+
+Where: 
+
+   --trace <trace file>
+     (value required)  trace file
+
+   -r <results file>,  --results <results file>
+     (value required)  results file
+
+   -I,  --integerclasses
+     classes labels are all integers
+
+   -p,  --printpred
+     Print predicted class label
+
+   -j,  --printtrue
+     Print true class label
+
+   -s <result file format>,  --scale <result file format>
+     (value required)  Choose the type of score(s) to output. Options are
+     'prob', 'logprob', 'odds', 'logodds', 'linear', 'all', Default is the
+     same as 'criterion'. Only valid with sparse result file format. See
+     manual for detailed restrictions. 
+
+   -o <class label>,  --omit <class label>
+     (value required)  Suppress a class label from being output
+
+   -L <label file>,  --labels <label file>
+     (value required)  Label file
+
+   -t <threshold value (only valid with '-c')>,  --includethresh <threshold
+      value (only valid with '-c')>
+     (value required)  Threshold value for criterion. Works only if
+     '-c/--criterion'option is set to 'prob', 'logprob', 'odds', 'logodds'
+     or 'linear'. Output a line whose criterion is greater than or equal to
+     <threshold>
+
+   -c <output criterion>,  --criterion <output criterion>
+     (value required)  output by criterion. Output a line only if the
+     criterion >= VAL, which is specified by '-t/--includethresh' option.
+     Possible values: 'all', 'prob', 'logprob', 'odds', 'logodds', 'linear'
+     , 'maxlinear', 'maxlinearall', 'maxproball', 'predicted', Default is
+     'predicted'.
+
+   -k,  --classic
+     Dense Result File Format (Format 2)
+
+   --,  --ignore_rest
+     Ignores the rest of the labeled arguments following this flag.
+
+   -v,  --version
+     Displays version information and exits.
+
+   -h,  --help
+     Displays usage information and exits.
+
+   <datafile>
+     (required)  (value required)  Data file; '-' for stdin
+
+   <modelfile>
+     (required)  (value required)  Model file
+
+
+

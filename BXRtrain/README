@@ -1,0 +1,35 @@
+#############################################################################
+BXRtrain:    train Bayesian Polytomous Resgression model. 
+             
+
+28Feb07. Bing Bai, Shenzhi Li.
+#############################################################################             
+
+The directory contains:
+
+1. ./src contains the source codes
+
+2. ./gcc directory
+   contains "Makefile" for Linux 
+
+3. ./msvc directory
+   contains rebuilt.bat and .rsp files for windows platform
+
+4. ./doc
+      
+###############################################################################
+##########     To Compile  ###############################################
+###############################################################################
+
+To compile on linux, 
+   go to ./gcc
+   modify the path for tclap in Makefile
+   then type make.
+
+To compile on Windows,
+   go to ./msvc dir,
+   fix the path for tclap in bxrtrain.compile.rsp;
+   then type "rebuilt.dat"
+   
+
+

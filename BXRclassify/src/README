@@ -1,0 +1,10 @@
+The files or directories contained in src sub-directory are:
+
+   ./src/tclap-1.0.5  -- used to parse command line options 
+   BXRclassify.cpp    -- the driver for BXRclassify
+   MultiModel.h       
+   MultiModel.cpp   
+   parseModelFiles.cpp 
+   readLabelFile.cpp
+   readTestVectorFile.cpp
+   genResultFile.cpp  
