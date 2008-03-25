@@ -1,4 +1,9 @@
 /*
+bugs: 
+SL  Mar 25, 08: the penalty vector calculation loop in Context;
+ */
+
+/*
  *  quasi-Newton optimization wrapper
  */
 #define  _USE_MATH_DEFINES
@@ -209,7 +214,7 @@ Context:: Context(
 		ModeVarSkew mvs = individualPriorsHolder->hasIndPrior(j,k,type);
 
 		// if not found, continue
-		if(type==0) continue;
+		if(type!=0) {
 		
 		// if the prior is specified in indprior file, overwrite the current value
 		priorMode(j,k) = mvs.mode;
@@ -229,7 +234,7 @@ Context:: Context(
 		}
 		else
 		    throw runtime_error("ZO only allows Normal or Laplace prior");
-		
+		}
 	    }
 
 	    // keep the penalty value
