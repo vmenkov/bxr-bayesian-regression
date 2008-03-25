@@ -1,3 +1,8 @@
+/*
+bugs:
+
+SL Mar25,08:  convert 0 in indprior file to @constant if defined SYMBOLIC
+ */
 #include "DataFactory.h"
 #include "PolyZO.h"
 
@@ -273,6 +278,10 @@ IndividualPriorsHolder* DataFactory::createIndPriorHolder() {
 	    if(viter==m_classes.end()) 	m_addClasses.push_back(iclass);
 	    else  		classid = viter-m_classes.begin();
 
+          // if defined SYMBOLIC, then 0 represents @constant; SL Mar25,08              
+          #ifdef SYMBOLIC                                                               
+          if (feat=="0") feat = "@constant";                                            
+          #endif 
 	    viter = find(m_featSelect.begin(),m_featSelect.end(),feat);
 	    if(viter == m_featSelect.end()) m_addFeats.push_back(feat); 
 	    else 		featid = viter - m_featSelect.begin();
@@ -299,6 +308,10 @@ IndividualPriorsHolder* DataFactory::createIndPriorHolder() {
 	    int featid = -1;
 	    rowbuf2>>feat;  
 
+          // if defined SYMBOLIC, then 0 represents @constant; SL Mar25,08              
+          #ifdef SYMBOLIC                                                               
+          if (feat=="0") feat = "@constant";                                            
+          #endif 
 	    Vec::iterator viter = find(m_featSelect.begin(),m_featSelect.end(),feat);
 	    if(viter==m_featSelect.end()) m_addFeats.push_back(feat);
 	    else featid = viter-m_featSelect.begin();
